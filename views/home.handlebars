@@ -1,0 +1,143 @@
+{{! Use the main layout }}
+{{!< main }}
+
+{{! New Post Submission Form }}
+<section class="content-container">
+    {{#if loggedIn}}
+        <!-- show the create post form when logged in -->
+        <section class="post-form">
+            <!-- make a header here -->
+            <form action="/posts" method="POST">
+                <!-- title input field name = "title" -->
+                <input type="text" name="title" placeholder="Post Title" required>
+                <!-- text area input field name = "content" -->
+                <textarea name="content" placeholder="What's on your mind?" required></textarea>
+
+                <div class="form-actions">
+                    <button type="button" class="emoji-button" onclick="toggleEmojiPanel()">😀</button>
+                    <button type="submit" class="post-button">Post</button>
+                </div>
+            </form>
+
+            <div id="emoji-container" class="emoji-panel" style="display: none;">
+                <!-- input field for the emoji search, use oninput="searchEmojis() -->
+                <input type="text" id="emoji-search" oninput="searchEmojis()" placeholder="Search Emojis">
+
+                <!-- a div, id = "emoji-grid" -->
+                <div id="emoji-grid"></div>
+            </div>
+        </section>
+    {{/if}}
+
+    <section class="posts-list">
+        <!-- recent posts -->
+
+        {{#if posts.length}}
+        <ul>
+            {{#each posts}}
+                <!-- you have to pass the user in to posts and this is the syntax -->
+                {{!-- {{> post this user=../user}} --}}
+
+                <li>
+                    <div class="post-header">
+                        <span> {{this.title}}</span>
+                        <span>by {{this.username}}</span>
+                        {{#ifCond this.username ../user.username}}
+                            <form action="/delete/{{this.id}}" method="POST">
+                                <button type="submit">Delete</button>
+                            </form>
+                        {{/ifCond}}
+                    </div>
+
+                    <p>{{this.content}}</p>
+
+                    <div class="post-actions">
+                        <span>Likes: {{this.likes}}</span>
+                        {{#ifCond this.username ../user.username}}
+                        {{else}}
+                            <form action="/like/{{this.id}}" method="POST">
+                                <button type="submit">Like</button>
+                            </form>
+                        {{/ifCond}}
+                    </div>
+                </li>
+
+            {{/each}}
+        </ul>
+        {{else}}
+            <!-- no posts, oh no, what now? -->
+            <p>No posts to display.</p>
+        {{/if}}
+    </section>
+</section>
+
+
+{{! JavaScript for Emoji Integration }}
+<script>
+
+/*
+ You want to show a subset of the emojis. About 200. However,
+ you also want the user to be able to search all emojis,
+ so, put them in this array when the array is empty so 
+ that you have them.
+*/
+
+let allEmojis = [];  // Global list to hold all emojis
+
+function toggleEmojiPanel() {
+    const container = document.getElementById('emoji-container');
+    container.style.display = container.style.display === 'none' ? 'block' : 'none';
+
+
+    if(container.style.display === 'block' && allEmojis.length == 0){
+        // go "Fetch" you some emojis and show them off with displayEmojies
+        fetch('/emojis')
+            // Want an array of JS emoji objects from emoji JSON file
+            .then(response => response.json())
+            .then(emojis => {processTheEmojis(emojis);})
+            .catch(error => console.error('Error fetching emojis:', error));
+        displayEmojis(emojis);
+    }
+}
+
+function displayEmojis(emojis,limit=200) {
+    const container = document.getElementById('emoji-grid');
+    container.innerHTML = '';  // Clear previous results
+    if (Array.isArray(emojis) && emojis.length > 0) {
+        emojis.slice(0, limit).forEach(emoji => {
+            const emojiElement = document.createElement('span');
+            emojiElement.textContent = emoji.character;
+            emojiElement.title = emoji.slug;  // Showing the emoji name on hover
+            emojiElement.style.cursor = 'pointer';
+            emojiElement.onclick = () => insertEmoji(emoji.character);
+            container.appendChild(emojiElement);
+        });
+    } else {
+        container.textContent = 'No emojis found. Try a different search!';
+    }
+}
+
+function searchEmojis() {
+    const searchTerm = document.getElementById('emoji-search').value.toLowerCase();
+    // array.filter takes a predicate
+    // use string.includes. 
+
+    const filteredEmojis = allEmojis.filter(emoji => emoji.slug.includes(searchTerm));
+    
+    displayEmojis(filteredEmojis);
+}
+
+function insertEmoji(emoji) {
+    // put an emoji on a form somehow. 
+    const textarea = document.querySelector('textarea[name="content"]');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // do this when you're doing getting the emoji on the form
+    //
+    textarea.value = textarea.value.substring(0, start) + emoji + textarea.value.substring(end);
+    textarea.focus();  // Keep focus on the textarea
+    textarea.selectionEnd = start + emoji.length;
+}
+</script>
+
