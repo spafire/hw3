@@ -1,16 +1,50 @@
+const dotenv = require('dotenv');
 const express = require('express');
 const expressHandlebars = require('express-handlebars');
 const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20');
+const bcrypt = require('bcrypt');
+const sqlite = require('sqlite');
+const sqlite3 = require('sqlite3');
+const path = require('path');
 const canvas = require('canvas');
 const { error } = require('console');
-const emoji = require('emoji.json')
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Configuration and Setup
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+// Load environment variables form .env file
+dotenv.config();
+
+// Express app setup
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+// User environment variables for client ID and secret
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+
+// Configure passport
+passport.use(new GoogleStrategy({
+    clientID: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
+    callbackURL: `http://localhost:${PORT}/auth/google/callback`
+}, (token, tokenSecret, profile, done) => {
+    return done(null, profile);
+}));
+
+//const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
+//const client = new OAuth2Client(CLIENT_ID, CLIENT_SECRET, REDIRECT_URL);
+
+passport.serializeUser((user, done) => {
+    done(null, user);
+});
+
+passport.deserializeUser((obj, done) => {
+    done(null, obj);
+});
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -89,18 +123,137 @@ app.use(express.static('public'));                  // Serve static files
 app.use(express.urlencoded({ extended: true }));    // Parse URL-encoded bodies (as sent by HTML forms)
 app.use(express.json());                            // Parse JSON bodies (as sent by API clients)
 
+
+// Initialize the database connection
+let db;
+
+// Asynchronous function to connect to the SQLite database
+async function initializeDB() {
+    db = await sqlite.open({filename: 'your_database_file.db', driver: sqlite3.Database});
+
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            hashedGoogleId TEXT NOT NULL UNIQUE,
+            avatar_url TEXT,
+            memberSince DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            username TEXT NOT NULL,
+            timestamp DATETIME NOT NULL,
+            likes INTEGER NOT NULL
+        );
+    `);
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Routes
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+// Google login route
+// Redirect to Google's OAuth 2.0 server
+app.get('/auth/google', passport.authenticate('google', { scope: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'] }));
+
+// Google callback route
+app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }), async (req, res) => {
+    try {
+        //console.log('Google profile:', req.user); // Debugging: log the profile object
+
+        const hashedGoogleId = req.user.id;
+        const memberSince = new Date().toISOString();
+
+        // Check if the user exists in the database
+        const existingUser = await db.get('SELECT * FROM users WHERE hashedGoogleId = ?', [hashedGoogleId]);
+
+        if (!existingUser) {
+            // If the user does not exist, create a new user entry with only the Google ID
+            const result = await db.run('INSERT INTO users (hashedGoogleId, memberSince) VALUES (?, ?)', [req.user.id, new Date().toISOString()]);
+            
+            // Store the new user's ID in the session
+            req.session.userId = result.lastID;
+            
+            // Redirect to registerUsername to complete registration
+            res.redirect('/registerUsername');
+        } else {
+            // User exists, save user info to session and redirect to home
+            req.session.userId = existingUser.id;
+            req.session.loggedIn = true;
+            res.redirect('/');
+        }
+    } catch (err) {
+        console.error('Error in Google callback:', err);
+        res.redirect('/error');
+    }
+});
+
+// User resgistration routes
+app.get('/registerUsername', (req, res) => {
+    res.render('registerUsername'); // Render the registerUsername.handlebars
+});
+
+app.post('/registerUsername', async (req, res) => {
+    const { username } = req.body;
+
+    if (!req.session.userId) {
+        return res.redirect('/auth/google'); // Ensure user is authenticated
+    }
+
+    try {
+        const existingUser = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+        if (existingUser) {
+            // Username is taken, re-render with error
+            return res.render('registerUsername', { error: 'Username is already taken.' });
+        }
+
+        // Update the user's username in the database
+        await db.run('UPDATE users SET username = ? WHERE id = ?', [username, req.session.userId]);
+
+        // Update the user object in the session
+        const updatedUser = await db.get('SELECT * FROM users WHERE id = ?', [req.session.userId]);
+        req.session.user = updatedUser;
+
+        // Redirect to home page
+        res.redirect('/');
+    } catch (err) {
+        console.error('Error registering username:', err);
+        res.redirect('/error');
+    }
+});
+
+
+// Google logout route
+app.get('/googleLogout', (req, res) => {
+    res.render('googleLogout'); // Render googleLogout.handlebars
+});
 
 // Home route: render home view with posts and user
 // We pass the posts and user variables into the home
 // template
 //
-app.get('/', (req, res) => {
-    const posts = getPosts();
-    const user = getCurrentUser(req) || {};
-    res.render('home', { posts, user });
+app.get('/', async (req, res) => {
+    try {
+        const sortOption = req.query.sort || 'recency';
+        let posts;
+        if (sortOption === 'likes') {
+            // Retrieve all posts from the posts table, ordered by number of likes
+            posts = await db.all('SELECT * FROM posts ORDER BY likes DESC, timestamp DESC');
+        } else {
+            // Retrieve all posts from the posts table, ordered by timestamp
+            posts = await db.all('SELECT * FROM posts ORDER BY timestamp DESC');
+        }
+        // Retrieve the current user from the session
+        const user = await getCurrentUser(req);
+        // Render the home page with the posts and user data
+        res.render('home', { posts, user });
+    } catch (err) {
+        console.error('Error fetching posts:', err);
+        res.render('error', {message: 'Failed to load posts.'});
+    } 
 });
 
 // Register GET route is used for error response from registration
@@ -118,15 +271,15 @@ app.get('/login', (req, res) => {
 // Error route: render error page
 //
 app.get('/error', (req, res) => {
-    res.render('error');
+    res.render('error', {message: 'Error'});
 });
 
 // Additional routes that you must implement
 
 
-app.get('/post/:id', (req, res) => {
+app.get('/post/:id', async (req, res) => {
     // Render post detail page
-    const post = posts.find(p => p.id === parseInt(req.params.id));
+    const post = await db.get('SELECT * FROM posts WHERE id = ?', [req.params.id]);
     if (post) {
         res.render('postDetail', {post});
     } else {
@@ -134,43 +287,110 @@ app.get('/post/:id', (req, res) => {
     }
 });
 
-app.post('/posts', (req, res) => {
+app.post('/posts', async (req, res) => {
     // Add a new post and redirect to home
     const {title, content} = req.body;
-    const user = getCurrentUser(req);
+    const user = await getCurrentUser(req);
     if (user) {
-        addPost(title, content, user);
-        res.redirect('/');
+        try {
+            await db.run('INSERT INTO posts (title, content, username, timestamp, likes) VALUES (?, ?, ?, ?, ?)', [title, content, user.username, new Date().toISOString(), 0]);
+            res.redirect('/');
+        } catch (err) {
+            console.error('Error creating post:', err);
+            res.redirect('/error');
+        }
     } else {
         res.redirect('/login');
     }
 });
 
-app.post('/like/:id', (req, res) => {
+app.post('/like/:id', async (req, res) => {
     // Update post likes
     const postId = parseInt(req.params.id);
-    updatePostLikes(postId, req.session.userId);
-    res.redirect('/');
+    const user = await getCurrentUser(req);
+    if (user) {
+        try {
+            await db.run('UPDATE posts SET likes = likes + 1 WHERE id = ?', [postId]);
+            res.redirect('/');
+        } catch (err) {
+            console.error('Error liking post:', err);
+            res.redirect('/error');
+        }
+    } else {
+        res.redirect('/login');
+    }
 });
 
-app.get('/profile', isAuthenticated, (req, res) => {
+app.get('/profile', isAuthenticated, async (req, res) => {
     // Render profile page
-    renderProfile(req, res);
+//    renderProfile(req, res);
+    const user = await getCurrentUser(req);
+    if (user) {
+        try {
+            const userPosts = await db.all('SELECT * FROM posts WHERE username = ?', [user.username]);
+            res.render('profile', { user, posts: userPosts });
+        } catch (err) {
+            console.error('Error fetching user posts:', err);
+            res.redirect('/error');
+        }
+    } else {
+        res.redirect('/login');
+    }
 });
 
-app.get('/avatar/:username', (req, res) => {
+app.get('/avatar/:username', async (req, res) => {
     // Serve the avatar image for the user
-    handleAvatar(req, res);
+//    handleAvatar(req, res);
+    const user = await db.get('SELECT * FROM users WHERE username = ?', [req.params.username]);
+    if (user && user.avatar_url) {
+        res.redirect(user.avatar_url);
+    } else {
+        // Make user avatar the first letter of their username
+        const letter = req.params.username.charAt(0).toUpperCase();
+        const img = generateAvatar(letter);
+        res.type('png');
+        res.send(img);
+    }
+
 });
 
-app.post('/register', (req, res) => {
+app.post('/register', async (req, res) => {
     // Register a new user
-    registerUser(req, res);
+//    registerUser(req, res);
+    const {username, hashedGoogleId} = req.body;
+
+    // Check if the username and hashedGoogleId are provided
+    if (!username || !hashedGoogleId) {
+        res.redirect('/register?error=Username and Google ID are required');
+        return;
+    }
+
+    try {
+        // Insert the new user into the users table
+        await db.run('INSERT INTO users (username, hashedGoogleId, avatar_url, memberSince) VALUES (?, ?, ?, ?)', [username, hashedGoogleId, '', new Date().toISOString()]);
+        // Retrieve the newly inserted user
+        const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+        req.session.userId = user.id;
+        req.session.loggedIn = true;
+        res.redirect('/');
+    } catch (err) {
+        console.error('Error registering user:', err);
+        res.redirect('/register?error=Username already exists');
+    }
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
     // Login a user
-    loginUser(req, res);
+//    loginUser(req, res);
+    const { username } = req.body;
+    const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+    if (user) {
+        req.session.userId = user.id;
+        req.session.loggedIn = true;
+        res.redirect('/');
+    } else {
+        res.redirect('/login?error=Invalid username');
+    }
 });
 
 app.get('/logout', (req, res) => {
@@ -178,10 +398,15 @@ app.get('/logout', (req, res) => {
     logoutUser(req, res);
 });
 
-app.post('/delete/:id', isAuthenticated, (req, res) => {
+app.post('/delete/:id', isAuthenticated, async (req, res) => {
     // Delete a post if the current user is the owner
     const postId = parseInt(req.params.id);
-    deletePost(postId, req.session.userId);
+    const user = await getCurrentUser(req);
+    const post = await db.get('SELECT * FROM posts WHERE id = ? AND username = ?', [postId, user.username]);
+    if (post) {
+        await db.run('DELETE FROM posts WHERE id = ?', [postId]);
+    }
+//    deletePost(postId, req.session.userId);
     res.redirect('/');
 });
 
@@ -204,7 +429,9 @@ app.get('/emojis', (req, res) => {
 // Server Activation
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-app.listen(PORT, () => {
+// Call the database initialization function before starting to listen for incoming requests
+app.listen(PORT, async () => {
+    await initializeDB();
     console.log(`Server is running on http://localhost:${PORT}`);
 });
 
@@ -400,9 +627,13 @@ function handleAvatar(req, res) {
 }
 
 // Function to get the current user from session
-function getCurrentUser(req) {
+async function getCurrentUser(req) {
     // Return the user object if the session user ID matches
-    return findUserById(req.session.userId);
+//    return findUserById(req.session.userId);
+    if (req.session.userId) {
+        return await db.get('SELECT * FROM users WHERE id = ?', [req.session.userId]);
+    }
+    return null;
 }
 
 // Function to get all posts, sorted by latest first

@@ -27,9 +27,24 @@
                 <div id="emoji-grid"></div>
             </div>
         </section>
+    {{else}}
+        <p>Please <a href="/auth/google">log in with Google</a> to post.</p>
     {{/if}}
 
+     <!-- Sorting options -->
+    <div class="sorting-options">
+        <label for="sort-select">Sort by:</label>
+        <select id="sort-select" onchange="sortPosts()">
+            <option value="recency">Most Recent</option>
+            <option value="likes">Most Liked</option>
+        </select>
+    </div>
+    
     <section class="posts-list">
+        {{!-- <select id="sortOption">
+            <option value="recency">Recency</option>
+            <option value="likes">Likes</option>
+        </select> --}}
         <!-- recent posts -->
 
         {{#if posts.length}}
@@ -42,15 +57,15 @@
                     <div class="post-header">
                         <span> {{this.title}}</span>
                         <span>by {{this.username}}</span>
+                    </div>
+                    <div class="post-actions">
                         {{#ifCond this.username ../user.username}}
                             <form action="/delete/{{this.id}}" method="POST">
                                 <button type="submit">Delete</button>
                             </form>
                         {{/ifCond}}
                     </div>
-
                     <p>{{this.content}}</p>
-
                     <div class="post-actions">
                         <span>Likes: {{this.likes}}</span>
                         {{#ifCond this.username ../user.username}}
@@ -71,6 +86,13 @@
     </section>
 </section>
 
+{{! JavaScript to handle sorting logic }}
+<script>
+    function sortPosts() {
+        const sortValue = document.getElementById('sort-select').value;
+        window.location.href = `/?sort=${sortValue}`;
+    }
+</script>
 
 {{! JavaScript for Emoji Integration }}
 <script>

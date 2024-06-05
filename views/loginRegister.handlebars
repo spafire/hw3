@@ -8,11 +8,12 @@
         {{#if loginError}}
             <p style="color: red;">{{loginError}}</p>
         {{/if}}
-        <form action="/login" method="POST">
+        <a href="/auth/google">Login with Google</a>
+        {{!-- <form action="/login" method="POST">
             <!-- the login form goes here --> 
             <input type="text" name="username" placeholder="Username" required>       
             <button type="submit">Login</button>
-        </form>
+        </form> --}}
     </section>
 
     <!-- say --OR-- ... with style -->
@@ -23,10 +24,12 @@
         {{#if regError}}
             <p style="color: red;">{{regError}}</p>
         {{/if}}
-        <form action="/register" method="POST">
+        <a href="/auth/google">Register with Google</a>
+        {{!-- <form action="/register" method="POST">
             <!-- the registration form goes here -->
             <input type="text" name="username" placeholder="Username" required>
+            <input type="text" name="hashedGoogleId" placeholder="Google ID" required>
             <button type="submit">Register</button>
-        </form>
+        </form> --}}
     </section>
 </section>

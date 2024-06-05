@@ -1,0 +1,13 @@
+{{! Use the main layout }}
+{{!< main }}
+
+<section class="content-container">
+    <form action="/registerUsername" method="POST" class="form-container">
+        <input type="text" name="username" placeholder="Enter your username" required>
+        <button type="submit" class="submit-button">Register</button>
+        {{#if error}}
+            <p class="error-message">{{error}}</p>
+        {{/if}}
+    </form>
+</section>
+    
