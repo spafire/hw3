@@ -24,6 +24,15 @@ async function initializeDB() {
             timestamp DATETIME NOT NULL,
             likes INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS post_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER NOT NULL,
+            postId INTEGER NOT NULL,
+            UNIQUE(userId, postId),
+            FOREIGN KEY(userId) REFERENCES users(id),
+            FOREIGN KEY(postId) REFERENCES posts(id)
+        );
     `);
 
     // Sample data - Replace these arrays with your own data

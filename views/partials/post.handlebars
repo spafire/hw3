@@ -4,24 +4,27 @@
         <!-- the user's avatar -->
         <img src="/avatar/{{username}}" alt="{{username}}'s avatar">
     </div>
-    <div class="post-content preserve-newlines">
+    <div class="post-content">
         <!-- the post -->
-        <h3>{{title}}</h3>
-        <p>{{content}}</p>
-        <div class="post-status-bar">
-            <!-- everything that is shown in the status bar -->
-            <!-- Heart = ♥ -->
-            <span>Likes: {{likes}}</span>
-            <!-- font awesome  trashcan = <i class="fas fa-trash-alt"> </i>-->
-            {{#ifCond username ../user.username}}
-                <form action="/delete/{{id}}" method="POST" class="delete-button">
-                    <button type="submit"> <i class="fas fa-trash-alt"></i> </button>
-                </form>
-            {{else}}
-                <form action="/like/{{id}}" method="POST" class="like-button">
-                    <button type="submit"> ♥ </button>
-                </form>
-            {{/ifCond}}
+        <div class="post-text">
+            <h3>{{title}}</h3>
+            <p>{{content}}</p>
+        </div>
+        <div class="post-meta">
+        <!-- everything that is shown in the status bar -->
+        <!-- Heart = ♥ -->
+        <span class="likes">Likes: {{likes}}</span>
+        <span class="posted-by">Posted by {{this.username}} on {{this.timestamp}}</span>
+        <!-- font awesome  trashcan = <i class="fas fa-trash-alt"> </i>-->
+        {{#ifCond username ../user.username}}
+            <form action="/delete/{{id}}" method="POST" class="delete-button">
+                <button type="submit"> <i class="fas fa-trash-alt"></i> </button>
+            </form>
+        {{else}}
+            <form action="/like/{{id}}" method="POST" class="like-button">
+                <button type="submit"> ♥ </button>
+            </form>
+        {{/ifCond}}
         </div>        
     </div>
 </div>

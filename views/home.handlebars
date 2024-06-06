@@ -1,6 +1,9 @@
 {{! Use the main layout }}
 {{!< main }}
 
+<!-- Main Content Container -->
+<div class="main-container">
+
 {{! New Post Submission Form }}
 <section class="content-container">
     {{#if loggedIn}}
@@ -14,33 +17,39 @@
                 <textarea name="content" placeholder="What's on your mind?" required></textarea>
 
                 <div class="form-actions">
-                    <button type="button" class="emoji-button" onclick="toggleEmojiPanel()">😀</button>
+                    {{!-- <button type="button" class="emoji-button" onclick="toggleEmojiPanel()">😀</button> --}}
+                    <div id="emojiSelectorIcon" onclick="toggleEmojiPanel()" >🙂</div>
                     <button type="submit" class="post-button">Post</button>
                 </div>
             </form>
 
-            <div id="emoji-container" class="emoji-panel" style="display: none;">
+            <div id="emojiSelector" class="emoji-selector">
+                <input type="text" id="emojiSearch" oninput="searchEmojis()" placeholder="Search emojis...">
+                <ul id="emojiList"></ul>
+            </div>
+            
+            {{!-- <div id="emoji-container" class="emoji-panel" style="display: none;">
                 <!-- input field for the emoji search, use oninput="searchEmojis() -->
                 <input type="text" id="emoji-search" oninput="searchEmojis()" placeholder="Search Emojis">
 
                 <!-- a div, id = "emoji-grid" -->
                 <div id="emoji-grid"></div>
-            </div>
+            </div> --}}
         </section>
-    {{else}}
-        <p>Please <a href="/auth/google">log in with Google</a> to post.</p>
+    {{!-- {{else}}
+        <p>Please <a href="/auth/google">log in with Google</a> to post.</p> --}}
     {{/if}}
 
-     <!-- Sorting options -->
-    <div class="sorting-options">
+     <!-- Post Sorting options -->
+    <div class="sort-options">
         <label for="sort-select">Sort by:</label>
         <select id="sort-select" onchange="sortPosts()">
-            <option value="recency">Most Recent</option>
-            <option value="likes">Most Liked</option>
+            <option value="recency" {{#ifCond sortOption 'recency'}}selected{{/ifCond}}>Recent</option>
+            <option value="likes" {{#ifCond sortOption 'likes'}}selected{{/ifCond}}>Likes</option>
         </select>
     </div>
     
-    <section class="posts-list">
+    <section class="posts-container">
         {{!-- <select id="sortOption">
             <option value="recency">Recency</option>
             <option value="likes">Likes</option>
@@ -52,11 +61,42 @@
             {{#each posts}}
                 <!-- you have to pass the user in to posts and this is the syntax -->
                 {{!-- {{> post this user=../user}} --}}
+                <div class="post">
+                    <div class="post-content">
+                        <div class="post-avatar">
+                        <!-- the user's avatar -->
+                        <img src="/avatar/{{username}}" alt="{{username}}'s avatar">
+                        </div>
+                        
+                        <div class="post-text">
+                            <h3>{{this.title}}</h3>
+                            <p>{{this.content}}</p>
+                            <div class="post-meta">
+                                {{!-- Delete or Like button --}}
+                                {{#ifCond this.username ../user.username}}
+                                <form action="/delete/{{this.id}}" method="POST" class="delete-button">
+                                    <button type="submit"> <i class="fas fa-trash-alt"></i> </button>
+                                </form>
+                                {{else}}
+                                <form action="/like/{{this.id}}" method="POST" class="like-button">
+                                    <button type="submit"> ♥ </button>
+                                </form>
+                                {{/ifCond}}
+                                <div class="posted-by">
+                                    <p><small>Posted by {{this.username}} on {{this.timestamp}}</small></p>
+                                </div>
+                                <div class="likes">
+                                    <p><small>Likes: {{this.likes}}</small></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                <li>
+
+                {{!-- <li>
                     <div class="post-header">
                         <span> {{this.title}}</span>
-                        <span>by {{this.username}}</span>
                     </div>
                     <div class="post-actions">
                         {{#ifCond this.username ../user.username}}
@@ -67,7 +107,8 @@
                     </div>
                     <p>{{this.content}}</p>
                     <div class="post-actions">
-                        <span>Likes: {{this.likes}}</span>
+                        <span class="likes">Likes: {{this.likes}}</span>
+                        <span class="posted-by">Posted by {{this.username}} on {{this.timestamp}}</span>
                         {{#ifCond this.username ../user.username}}
                         {{else}}
                             <form action="/like/{{this.id}}" method="POST">
@@ -75,7 +116,7 @@
                             </form>
                         {{/ifCond}}
                     </div>
-                </li>
+                </li> --}}
 
             {{/each}}
         </ul>
@@ -85,18 +126,18 @@
         {{/if}}
     </section>
 </section>
+</div>
 
 {{! JavaScript to handle sorting logic }}
 <script>
     function sortPosts() {
-        const sortValue = document.getElementById('sort-select').value;
-        window.location.href = `/?sort=${sortValue}`;
+        const sortOption = document.getElementById('sort-select').value;
+        window.location.href = `/?sort=${sortOption}`;
     }
 </script>
 
 {{! JavaScript for Emoji Integration }}
 <script>
-
 /*
  You want to show a subset of the emojis. About 200. However,
  you also want the user to be able to search all emojis,
@@ -104,62 +145,63 @@
  that you have them.
 */
 
-let allEmojis = [];  // Global list to hold all emojis
+const emojiSelectorIcon = document.getElementById('emojiSelectorIcon');
+const emojiSelector = document.getElementById('emojiSelector');
+const emojiList = document.getElementById('emojiList');
+const emojiSearch = document.getElementById('emojiSearch');
+const postContent = document.querySelector('textarea[name="content"]');
 
+// Toggle the emoji selector's visibility
 function toggleEmojiPanel() {
-    const container = document.getElementById('emoji-container');
-    container.style.display = container.style.display === 'none' ? 'block' : 'none';
+    emojiSelector.classList.toggle('active');
 
-
-    if(container.style.display === 'block' && allEmojis.length == 0){
-        // go "Fetch" you some emojis and show them off with displayEmojies
-        fetch('/emojis')
-            // Want an array of JS emoji objects from emoji JSON file
-            .then(response => response.json())
-            .then(emojis => {processTheEmojis(emojis);})
-            .catch(error => console.error('Error fetching emojis:', error));
-        displayEmojis(emojis);
-    }
+    // Fetch emojis from the server and load them into the list
+    fetch('https://emoji-api.com/emojis?access_key=6ff90a0b084869fe2355f4cddab92fa159843840')
+        .then(res => res.json())
+        .then(data => displayEmojis(data))
+        .catch(error => console.error('Error fetching emojis:', error));
 }
 
-function displayEmojis(emojis,limit=200) {
-    const container = document.getElementById('emoji-grid');
-    container.innerHTML = '';  // Clear previous results
-    if (Array.isArray(emojis) && emojis.length > 0) {
-        emojis.slice(0, limit).forEach(emoji => {
-            const emojiElement = document.createElement('span');
-            emojiElement.textContent = emoji.character;
-            emojiElement.title = emoji.slug;  // Showing the emoji name on hover
-            emojiElement.style.cursor = 'pointer';
-            emojiElement.onclick = () => insertEmoji(emoji.character);
-            container.appendChild(emojiElement);
-        });
-    } else {
-        container.textContent = 'No emojis found. Try a different search!';
-    }
+// Function to load emojis into the list
+function displayEmojis(emojis) {
+    emojiList.innerHTML = ''; // Clear any existing emojis
+    emojis.forEach(emoji => {
+        let li = document.createElement('li');
+        li.setAttribute('emoji-name', emoji.slug);
+        li.textContent = emoji.character;
+        li.onclick = () => insertEmoji(emoji.character);
+        emojiList.appendChild(li);
+    });
 }
 
+// Filter emojis based on search input
 function searchEmojis() {
-    const searchTerm = document.getElementById('emoji-search').value.toLowerCase();
-    // array.filter takes a predicate
-    // use string.includes. 
-
-    const filteredEmojis = allEmojis.filter(emoji => emoji.slug.includes(searchTerm));
-    
-    displayEmojis(filteredEmojis);
+    emojiSearch.addEventListener('keyup', e => {
+        let value = e.target.value.toLowerCase();
+        let emojis = document.querySelectorAll('#emojiList li');
+        emojis.forEach(emoji => {
+            if (emoji.getAttribute('emoji-name').toLowerCase().includes(value)) {
+                emoji.style.display = 'flex';
+            } else {
+                emoji.style.display = 'none';
+            }
+        });
+    });
 }
 
+// Function to insert the selected emoji into the textarea
 function insertEmoji(emoji) {
     // put an emoji on a form somehow. 
-    const textarea = document.querySelector('textarea[name="content"]');
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
+    const startPos = postContent.selectionStart;
+    const endPos = postContent.selectionEnd;
 
     // do this when you're doing getting the emoji on the form
-    //
-    textarea.value = textarea.value.substring(0, start) + emoji + textarea.value.substring(end);
-    textarea.focus();  // Keep focus on the textarea
-    textarea.selectionEnd = start + emoji.length;
+    postContent.value = postContent.value.substring(0, startPos) + emoji + postContent.value.substring(endPos, postContent.value.length);
+    postContent.focus();
+    postContent.selectionStart = startPos + emoji.length;
+    postContent.selectionEnd = startPos + emoji.length;
+    toggleEmojiPanel(); // Optional: Close the emoji panel after inserting an emoji
 }
+
 </script>
 

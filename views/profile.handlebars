@@ -15,25 +15,83 @@
     </section>
 </div>
 
-<section class="user-posts">
-    <!-- you can call posts tweets, or truths, or whatever, these are neologisms. Choose your own new in server.js -->
-    <h2>Your {{{postNeoType}}}s</h2>
-    
-    <!-- you'll need to make this conditional and #each expression work -->
-    {{#if posts.length}}
+<section>
+    <div class="nav-bar">
         <ul>
+            <li><a href="/profile" class="{{#ifCond showLiked false}}active{{/ifCond}}">My Posts</a></li>
+            <li><a href="/profile/liked" class="{{#ifCond showLiked true}}active{{/ifCond}}">Liked Posts</a></li>
+        </ul>
+    </div>
+</section>
+
+<section class="posts-container">
+    {{#ifCond showLiked true}}
+        {{!-- <h2>Posts I Liked</h2> --}}
+        {{#each likedPosts}}
+            <div class="post">
+                <div class="post-content">
+                    <div class="post-avatar">
+                    <!-- the user's avatar -->
+                    <img src="/avatar/{{username}}" alt="{{username}}'s avatar">
+                    </div>
+                    
+                    <div class="post-text">
+                        <h3>{{this.title}}</h3>
+                        <p>{{this.content}}</p>
+                        <div class="post-meta">
+                            {{!-- Like button --}}
+                            <form action="/like/{{id}}" method="POST" class="like-button">
+                                <button type="submit"> ♥ </button>
+                            </form>
+                            <div class="posted-by">
+                                <p><small>Posted by {{this.username}} on {{this.timestamp}}</small></p>
+                            </div>
+                            <div class="likes">
+                                <p><small>Likes: {{this.likes}}</small></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {{/each}}
+    {{else}}
+    <!-- you can call posts tweets, or truths, or whatever, these are neologisms. Choose your own new in server.js -->
+        {{!-- <h2>My Posts</h2> --}}
+        
+        <!-- you'll need to make this conditional and #each expression work -->
+        
+        {{#if posts.length}}
             {{#each posts}}
                 {{!-- {{> post this}} --}}
-                {{> post this}}
-                {{!-- <li>
-                    <h4>{{this.title}}</h4>
-                    <p>{{this.content}}</p>
-                    <span>Likes: {{this.likes}}</span>
-                </li> --}}
+                <div class="post">
+                    <div class="post-content">
+                        <div class="post-avatar">
+                        <!-- the user's avatar -->
+                        <img src="/avatar/{{username}}" alt="{{username}}'s avatar">
+                        </div>
+                        <div class="post-text">
+                            <h3>{{this.title}}</h3>
+                            <p>{{this.content}}</p>
+                            <div class="post-meta">
+                                <!-- Delete button -->
+                                <form action="/delete/{{this.id}}" method="POST" class="delete-button">
+                                    <button type="submit"> <i class="fas fa-trash-alt"></i> </button>
+                                </form>
+                                <div class="posted-by">
+                                    <p><small>Posted by {{this.username}} on {{this.timestamp}}</small></p>
+                                </div>
+                                <div class="likes">
+                                    <p><small>Likes: {{this.likes}}</small></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             {{/each}}
-        </ul>
-    {{else}}
-        <!-- fix this up with some helper functions and other handlebars expressions, or add you own character -->
-        <p>You have not posted yet, poster.</p>
-    {{/if}}
+        {{else}}
+            <!-- fix this up with some helper functions and other handlebars expressions, or add you own character -->
+            <p>You have not posted yet, poster.</p>
+        {{/if}}
+    {{/ifCond}}
+
 </section>

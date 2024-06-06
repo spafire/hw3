@@ -22,6 +22,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// https://emoji-api.com/emojis?access_key=${accessToken}
+const accessToken = process.env.EMOJI_API_KEY;
+
 // User environment variables for client ID and secret
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
@@ -111,7 +114,7 @@ app.use(
 // should be used in your template files. 
 // 
 app.use((req, res, next) => {
-    res.locals.appName = 'MicroBlog';
+    res.locals.appName = 'BirdWatch';
     res.locals.copyrightYear = 2024;
     res.locals.postNeoType = 'Post';
     res.locals.loggedIn = req.session.loggedIn || false;
@@ -147,6 +150,15 @@ async function initializeDB() {
             username TEXT NOT NULL,
             timestamp DATETIME NOT NULL,
             likes INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS post_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER NOT NULL,
+            postId INTEGER NOT NULL,
+            UNIQUE(userId, postId),
+            FOREIGN KEY(userId) REFERENCES users(id),
+            FOREIGN KEY(postId) REFERENCES posts(id)
         );
     `);
 }
@@ -249,7 +261,7 @@ app.get('/', async (req, res) => {
         // Retrieve the current user from the session
         const user = await getCurrentUser(req);
         // Render the home page with the posts and user data
-        res.render('home', { posts, user });
+        res.render('home', { posts, user, sortOption });
     } catch (err) {
         console.error('Error fetching posts:', err);
         res.render('error', {message: 'Failed to load posts.'});
@@ -310,8 +322,24 @@ app.post('/like/:id', async (req, res) => {
     const user = await getCurrentUser(req);
     if (user) {
         try {
-            await db.run('UPDATE posts SET likes = likes + 1 WHERE id = ?', [postId]);
-            res.redirect('/');
+            const userId = user.id;
+            console.log(userId);
+            
+            // Check if user has already liked the post
+            const alreadyLiked = await db.get('SELECT * FROM post_likes WHERE userId = ? AND postId = ?', [userId, postId]);
+            console.log(alreadyLiked);
+
+            if (alreadyLiked) {
+                res.redirect('/'); // User already liked this post
+            } else {
+                // Update post's like count
+                await db.run('UPDATE posts SET likes = likes + 1 WHERE id = ?', [postId]);
+                
+                // Add like entry
+                await db.run('INSERT INTO post_likes (userId, postId) VALUES (?, ?)', [userId, postId]);
+                
+                res.redirect('/');
+            }
         } catch (err) {
             console.error('Error liking post:', err);
             res.redirect('/error');
@@ -321,6 +349,7 @@ app.post('/like/:id', async (req, res) => {
     }
 });
 
+// Update /profile route to handle toggle between userPosts and likedPosts
 app.get('/profile', isAuthenticated, async (req, res) => {
     // Render profile page
 //    renderProfile(req, res);
@@ -328,9 +357,27 @@ app.get('/profile', isAuthenticated, async (req, res) => {
     if (user) {
         try {
             const userPosts = await db.all('SELECT * FROM posts WHERE username = ?', [user.username]);
-            res.render('profile', { user, posts: userPosts });
+            const likedPosts = await getLikedPosts(user.id);
+            res.render('profile', { user, posts: userPosts, likedPosts, showLiked: false});
         } catch (err) {
             console.error('Error fetching user posts:', err);
+            res.redirect('/error');
+        }
+    } else {
+        res.redirect('/login');
+    }
+});
+
+// Route for liked posts
+app.get('/profile/liked', isAuthenticated, async (req, res) => {
+    const user = await getCurrentUser(req);
+    if (user) {
+        try {
+            const userPosts = await db.all('SELECT * FROM posts WHERE username = ?', [user.username]);
+            const likedPosts = await getLikedPosts(user.id);
+            res.render('profile', { user, posts: userPosts, likedPosts, showLiked: true });
+        } catch (err) {
+            console.error('Error fetching liked posts:', err);
             res.redirect('/error');
         }
     } else {
@@ -411,18 +458,19 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
 });
 
 // Load and serve the emoji.json file
-app.get('/emojis', (req, res) => {
-    const emojisPath = path.join(__dirname, emoji);
-    fs.readFile(emojisPath, 'utf8', (err, data) => {
-        if (err) { // With callback
-            console.error('Error reading emojis file:', err);
-            res.status(500).json({ error: 'Failed to load emojis.' });
-        } else {
-            res.setHeader('Content-Type', 'application/json');
-            res.send(data);
-        }
-    });
- 
+app.get('/emojis', async (req, res) => {
+    try {
+        const response = await fetch('https://emoji-api.com/emojis?access_key=${accessToken}');
+        const data = await response.json();
+        res.json(data);
+    // .then(response => {
+    //     res.send(response);
+    // });
+    // .then(data => console.log(data))
+    } catch (error) {
+        console.error('Error fetching emojis:', error);
+        res.status(500).json({ error: 'Failed to load emojis' });
+    }
 });
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -538,6 +586,16 @@ function isAuthenticated(req, res, next) {
     } else {
         res.redirect('/login'); // Redirect to login if not authenticated
     }
+}
+
+// Function to get liked posts
+async function getLikedPosts(userId) {
+    return await db.all(`
+        SELECT posts.* FROM posts
+        JOIN post_likes ON posts.id = post_likes.postId
+        WHERE post_likes.userId = ?
+        ORDER BY posts.timestamp DESC
+    `, [userId]);
 }
 
 // Function to register a user
